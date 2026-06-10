@@ -5,13 +5,13 @@ build-backend = "hatchling.build"
 [project]
 name = "reaproj"
 version = "0.1.0"
-description = "Semantic access to REAPER .RPP project files: tracks, items, regions, render settings"
+description = "Parse and edit REAPER .RPP project files: tracks, items, markers, regions, and render settings as Python objects"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [{ name = "Ben Kazez" }]
 dependencies = ["rpp>=0.4"]
-keywords = ["reaper", "rpp", "daw", "audio"]
+keywords = ["reaper", "rpp", "reaper-project", "daw", "audio", "music", "parser", "render", "regions"]
 
 [project.urls]
 Homepage = "https://github.com/bkazez/reaproj"

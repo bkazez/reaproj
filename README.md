@@ -1,7 +1,12 @@
 # reaproj
 
-Semantic access to REAPER `.RPP` project files from Python: tracks, items,
-markers, regions, and render settings, instead of hand-editing chunk text.
+Parse and edit REAPER `.RPP` project files in Python: tracks, items, markers,
+regions, and render settings as objects, instead of hand-editing chunk text.
+
+Typical uses: add regions to a project programmatically, batch-change render
+settings (output directory, `$region` naming, format) before a headless
+`-renderproject` render, read item positions and source files for analysis,
+or save versioned copies of a session.
 
 Built on [rpp](https://github.com/Perlence/rpp) (the tokenizer/emitter);
 reaproj adds the object model on top.
@@ -59,6 +64,19 @@ Then render headlessly:
 ```
 REAPER -renderproject "Session v2.RPP"
 ```
+
+## Alternatives
+
+- [rpp](https://github.com/Perlence/rpp): the underlying low-level
+  parser/emitter; gives you an ElementTree-like view of raw chunks. Use it
+  directly when you need something reaproj doesn't model yet.
+- [reathon](https://github.com/jamesb93/reathon): constructs new REAPER
+  projects from scratch; not aimed at editing existing ones.
+- [rppxml](https://github.com/IcEarthlight/rppxml): RPP parsing via the WDL
+  implementation.
+- [reapy](https://github.com/RomeoDespres/reapy): controls a running REAPER
+  instance through the ReaScript API; requires REAPER to be open. reaproj
+  works on the files themselves, no REAPER required.
 
 ## Fidelity
 
