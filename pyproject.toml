@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "reaproj"
+version = "0.1.0"
+description = "Semantic access to REAPER .RPP project files: tracks, items, regions, render settings"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [{ name = "Ben Kazez" }]
+dependencies = ["rpp>=0.4"]
+keywords = ["reaper", "rpp", "daw", "audio"]
+
+[project.urls]
+Homepage = "https://github.com/bkazez/reaproj"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
