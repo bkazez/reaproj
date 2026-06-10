@@ -10,6 +10,8 @@ FIXTURE = textwrap.dedent("""\
       MARKER 1 10.5 "good bit" 0 0 1 B {11111111-2222-3333-4444-555555555555} 0
       MARKER 2 20 Verse 1 0 1 B {AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE} 0
       MARKER 2 30.25 "" 1
+      MARKER 3 40 Bridge 5 0 1 B {AAAAAAAA-BBBB-CCCC-DDDD-FFFFFFFFFFFF} 0
+      MARKER 3 45.5 "" 5
       RENDER_FILE Renders
       RENDER_PATTERN $region
       RENDER_RANGE 1 0 0 0 1000
@@ -66,18 +68,20 @@ def test_tracks_and_items(project):
 def test_markers_and_regions(project):
     (marker,) = project.markers
     assert (marker.id, marker.position, marker.name) == (1, 10.5, "good bit")
-    (region,) = project.regions
-    assert (region.name, region.start, region.end) == ("Verse", 20.0, 30.25)
-    assert region.length == 10.25
+    verse, bridge = project.regions
+    assert (verse.name, verse.start, verse.end) == ("Verse", 20.0, 30.25)
+    assert verse.length == 10.25
+    # flag 5 (region bit plus other flag bits) must still parse as a region
+    assert (bridge.name, bridge.start, bridge.end) == ("Bridge", 40.0, 45.5)
 
 
 def test_add_region_roundtrips(project):
-    project.add_region(40, 55.125, "Take 7")
+    project.add_region(50, 55.125, "Take 7")
     reloaded = Project.loads(project.dumps())
     added = reloaded.regions[-1]
-    assert (added.name, added.start, added.end) == ("Take 7", 40.0, 55.125)
-    assert added.id == 3  # next free id
-    assert len(reloaded.regions) == 2
+    assert (added.name, added.start, added.end) == ("Take 7", 50.0, 55.125)
+    assert added.id == 4  # next free id
+    assert len(reloaded.regions) == 3
     assert len(reloaded.markers) == 1
 
 

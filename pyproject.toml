@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "reaproj"
-version = "0.1.0"
+version = "0.1.1"
 description = "Parse and edit REAPER .RPP project files: tracks, items, markers, regions, and render settings as Python objects"
 readme = "README.md"
 license = "MIT"

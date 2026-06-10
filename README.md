@@ -81,9 +81,18 @@ REAPER -renderproject "Session v2.RPP"
 ## Fidelity
 
 reaproj never touches content it doesn't understand; everything round-trips
-through the element tree. Output differs from REAPER's own formatting only in
-cosmetic quoting (quotes dropped on space-free strings), which REAPER parses
-identically. Numeric values are preserved as strings, never reformatted.
+through the element tree, and numeric values are preserved as strings, never
+reformatted. Verified on real REAPER 7 projects:
+
+- Emission is idempotent, and the only differences from REAPER's own formatting
+  are cosmetic quoting (quotes dropped on space-free strings; both forms appear
+  in REAPER-authored files).
+- REAPER itself loads and headlessly renders reaproj-emitted projects: in an
+  A/B against the original project file, all rendered regions matched in name,
+  count, and byte-identical file size, and the audio difference between the two
+  renders was the same as between two renders of the untouched original (i.e.
+  REAPER's own render-to-render variance from modulated plugins, not a file
+  difference).
 
 ## License
 

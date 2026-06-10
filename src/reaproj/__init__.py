@@ -32,7 +32,7 @@ from pathlib import Path
 
 import rpp as _rpp
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "Project",
@@ -348,4 +348,9 @@ def _payload_str(child):
 
 
 def _is_region_boundary(tokens):
-    return len(tokens) > 4 and tokens[4] == "1"
+    """Region lines carry an odd flag in column 5 (bit 0 = region; REAPER
+    writes 1, or 5 when other flag bits are set)."""
+    try:
+        return len(tokens) > 4 and int(tokens[4]) & 1 == 1
+    except ValueError:
+        return False
