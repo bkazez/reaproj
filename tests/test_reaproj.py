@@ -223,3 +223,9 @@ def test_item_move_to_track(project):
     reloaded = Project.loads(project.dumps())
     moved = [t for t in reloaded.tracks if t.name == "Destination"][0].items[0]
     assert (moved.position, moved.length, moved.soffs) == before
+
+
+def test_region_rename_roundtrips(project):
+    region = project.regions[0]
+    region.name = "Renamed T3*"
+    assert Project.loads(project.dumps()).regions[0].name == "Renamed T3*"

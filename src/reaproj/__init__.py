@@ -374,7 +374,16 @@ class Region:
     id = property(lambda self: int(self.head[1]))
     start = property(lambda self: float(self.head[2]))
     end = property(lambda self: float(self.tail[2]))
-    name = property(lambda self: self.head[3])
+
+    @property
+    def name(self):
+        return self.head[3] if len(self.head) > 3 else ""
+
+    @name.setter
+    def name(self, value):
+        while len(self.head) <= 3:
+            self.head.append("")
+        self.head[3] = value
 
     @property
     def length(self):
