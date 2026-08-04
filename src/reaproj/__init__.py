@@ -123,6 +123,14 @@ class Project:
                 pending = None
         return regions
 
+    def remove_region(self, region):
+        """Delete a region: both of its MARKER lines come out together."""
+        for tokens in (region.head, region.tail):
+            for child in list(self.element):
+                if child is tokens:
+                    self.element.remove(child)
+                    break
+
     def add_region(self, start, end, name):
         """Append a region; returns the new Region."""
         region_id = max((int(t[1]) for t in self._marker_leaves()), default=0) + 1
@@ -372,8 +380,10 @@ class Region:
         self.tail = tail
 
     id = property(lambda self: int(self.head[1]))
-    start = property(lambda self: float(self.head[2]))
-    end = property(lambda self: float(self.tail[2]))
+    start = property(lambda self: float(self.head[2]),
+                     lambda self, v: self.head.__setitem__(2, _num(v)))
+    end = property(lambda self: float(self.tail[2]),
+                   lambda self, v: self.tail.__setitem__(2, _num(v)))
 
     @property
     def name(self):

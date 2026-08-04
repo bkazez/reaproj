@@ -229,3 +229,25 @@ def test_region_rename_roundtrips(project):
     region = project.regions[0]
     region.name = "Renamed T3*"
     assert Project.loads(project.dumps()).regions[0].name == "Renamed T3*"
+
+
+def test_region_bounds_are_settable(project):
+    region = project.regions[0]
+    region.start = 5.5
+    region.end = 12.25
+    reloaded = Project.loads(project.dumps()).regions[0]
+    assert reloaded.start == pytest.approx(5.5)
+    assert reloaded.end == pytest.approx(12.25)
+
+
+def test_remove_region(project):
+    before = len(project.regions)
+    doomed = project.regions[0]
+    name = doomed.name
+    project.remove_region(doomed)
+    assert len(project.regions) == before - 1
+    reloaded = Project.loads(project.dumps())
+    assert len(reloaded.regions) == before - 1
+    # the surviving regions still pair up correctly
+    assert all(r.end >= r.start for r in reloaded.regions)
+    assert name not in [r.name for r in reloaded.regions] or before > 1
