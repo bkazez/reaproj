@@ -306,9 +306,37 @@ class Track:
         """Replace the track volume envelope with `points`, an iterable of
         (time, linear_gain). Square shape holds each value until the next point,
         which is what a per-section level wants; linear would ramp between them."""
+        return self._set_envelope("VOLENV2", points, square, extra=[["VOLTYPE", "1"]])
+
+    def set_pan_envelope(self, points, square=True):
+        """Replace the track pan envelope with `points`, an iterable of
+        (time, pan) where pan runs -1 (hard left) to 1 (hard right)."""
+        return self._set_envelope("PANENV2", points, square)
+
+    def remove_envelopes(self, *kinds):
+        """Delete whole envelope blocks by tag, e.g. "VOLENV3" for trim volume.
+        Returns how many points went with them."""
+        removed = 0
         for child in list(self.element):
-            if getattr(child, "tag", None) == "VOLENV2":
+            if getattr(child, "tag", None) in kinds:
+                removed += sum(1 for c in child
+                               if isinstance(c, list) and c and c[0] == "PT")
                 self.element.remove(child)
+        return removed
+
+    @property
+    def envelopes(self):
+        """{tag: point count} for every envelope on the track."""
+        out = {}
+        for child in self.element:
+            tag = getattr(child, "tag", None)
+            if tag and ("ENV" in tag):
+                out[tag] = sum(1 for c in child
+                               if isinstance(c, list) and c and c[0] == "PT")
+        return out
+
+    def _set_envelope(self, tag, points, square, extra=()):
+        self.remove_envelopes(tag)
         shape = "1" if square else "0"
         children = [
             ["EGUID", "{" + str(uuid.uuid4()).upper() + "}"],
@@ -317,11 +345,11 @@ class Track:
             ["LANEHEIGHT", "0", "0"],
             ["ARM", "0"],
             ["DEFSHAPE", shape, "-1", "-1"],
-            ["VOLTYPE", "1"],
+            *[list(e) for e in extra],
         ]
-        for time, gain in points:
-            children.append(["PT", _num(time), _num(gain), shape])
-        env = _rpp.Element(tag="VOLENV2", attrib=[], children=children)
+        for time, value in points:
+            children.append(["PT", _num(time), _num(value), shape])
+        env = _rpp.Element(tag=tag, attrib=[], children=children)
         self.element.insert(_receive_insert_index(self.element), env)
         return env
 

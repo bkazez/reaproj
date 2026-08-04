@@ -251,3 +251,31 @@ def test_remove_region(project):
     # the surviving regions still pair up correctly
     assert all(r.end >= r.start for r in reloaded.regions)
     assert name not in [r.name for r in reloaded.regions] or before > 1
+
+
+def test_pan_envelope_roundtrips(project):
+    track = project.tracks[0]
+    track.set_pan_envelope([(0.0, 0.0), (10.0, 0.4), (20.0, 0.0)])
+    reloaded = Project.loads(project.dumps()).tracks[0]
+    env = reloaded.element.find("PANENV2")
+    points = [c for c in env if isinstance(c, list) and c and c[0] == "PT"]
+    assert [float(p[2]) for p in points] == pytest.approx([0.0, 0.4, 0.0])
+    assert reloaded.envelopes["PANENV2"] == 3
+
+
+def test_volume_and_pan_envelopes_coexist(project):
+    track = project.tracks[0]
+    track.set_volume_envelope([(0.0, 1.0)])
+    track.set_pan_envelope([(0.0, -0.5)])
+    reloaded = Project.loads(project.dumps()).tracks[0]
+    assert reloaded.envelopes == {"VOLENV2": 1, "PANENV2": 1}
+
+
+def test_remove_envelopes_by_tag(project):
+    track = project.tracks[0]
+    track.set_volume_envelope([(0.0, 1.0), (5.0, 0.5)])
+    track.set_pan_envelope([(0.0, 0.0)])
+    assert track.remove_envelopes("VOLENV2") == 2
+    assert "VOLENV2" not in track.envelopes
+    assert "PANENV2" in track.envelopes
+    assert track.remove_envelopes("NOSUCHENV") == 0
