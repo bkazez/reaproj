@@ -279,3 +279,12 @@ def test_remove_envelopes_by_tag(project):
     assert "VOLENV2" not in track.envelopes
     assert "PANENV2" in track.envelopes
     assert track.remove_envelopes("NOSUCHENV") == 0
+
+
+def test_marker_rename_and_move(project):
+    marker = project.markers[0]
+    marker.name = "Renamed marker"
+    marker.position = 42.5
+    reloaded = Project.loads(project.dumps()).markers[0]
+    assert reloaded.name == "Renamed marker"
+    assert reloaded.position == pytest.approx(42.5)

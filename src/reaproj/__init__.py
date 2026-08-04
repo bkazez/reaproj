@@ -398,8 +398,18 @@ class Marker:
         self.tokens = tokens
 
     id = property(lambda self: int(self.tokens[1]))
-    position = property(lambda self: float(self.tokens[2]))
-    name = property(lambda self: self.tokens[3] if len(self.tokens) > 3 else "")
+    position = property(lambda self: float(self.tokens[2]),
+                        lambda self, v: self.tokens.__setitem__(2, _num(v)))
+
+    @property
+    def name(self):
+        return self.tokens[3] if len(self.tokens) > 3 else ""
+
+    @name.setter
+    def name(self, value):
+        while len(self.tokens) <= 3:
+            self.tokens.append("")
+        self.tokens[3] = value
 
 
 class Region:
