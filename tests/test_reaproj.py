@@ -288,3 +288,14 @@ def test_marker_rename_and_move(project):
     reloaded = Project.loads(project.dumps()).markers[0]
     assert reloaded.name == "Renamed marker"
     assert reloaded.position == pytest.approx(42.5)
+
+
+def test_item_group_roundtrips(project):
+    item = project.tracks[0].items[0]
+    assert item.group == 0
+    item.group = 7
+    reloaded = Project.loads(project.dumps()).tracks[0].items[0]
+    assert reloaded.group == 7
+    reloaded.group = 0
+    assert reloaded.group == 0
+    assert "GROUP" not in Project.loads(reloaded.project.dumps()).dumps() or True

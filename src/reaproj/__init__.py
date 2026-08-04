@@ -366,6 +366,23 @@ class Item:
     soffs = property(lambda self: _get_float(self.element, "SOFFS"),
                      lambda self, v: _set_leaf(self.element, "SOFFS", _num(v)))
 
+    @property
+    def group(self):
+        """Item group id, or 0 for ungrouped. Items sharing an id are selected
+        and moved together in REAPER, which is what makes one click pick up
+        every mic of a take."""
+        leaf = _leaf(self.element, "GROUP")
+        return int(leaf[1]) if leaf and len(leaf) > 1 else 0
+
+    @group.setter
+    def group(self, value):
+        if value:
+            _set_leaf(self.element, "GROUP", str(int(value)))
+        else:
+            for child in list(self.element):
+                if isinstance(child, list) and child and child[0] == "GROUP":
+                    self.element.remove(child)
+
     def move_to(self, track):
         """Move this item onto another track, keeping its position and source."""
         for candidate in self.project.element.iterfind("TRACK") if self.project else []:
