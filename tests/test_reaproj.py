@@ -130,3 +130,96 @@ def test_unknown_format_payload_must_be_base64(project):
         project.render.format = "not base64!!"
     project.render.format = RENDER_FORMATS["wav24"]  # raw payloads accepted
     assert project.render.format == "wav24"
+
+
+def test_track_scalar_setters_roundtrip(project):
+    track = project.tracks[0]
+    track.name = "Renamed"
+    track.volume = 0.5
+    track.pan = -1.0
+    track.muted = True
+    track.play_offset = -0.003
+    track.play_offset_enabled = True
+    track.folder = (1, 1)
+    reloaded = Project.loads(project.dumps()).tracks[0]
+    assert reloaded.name == "Renamed"
+    assert reloaded.volume == pytest.approx(0.5)
+    assert reloaded.pan == pytest.approx(-1.0)
+    assert reloaded.muted
+    assert reloaded.play_offset == pytest.approx(-0.003)
+    assert reloaded.play_offset_enabled
+    assert reloaded.folder == (1, 1)
+
+
+def test_play_offset_enable_preserves_other_flags(project):
+    track = project.tracks[0]
+    track.play_offset = 0.01
+    # bit 1 means "value is in samples" and must survive toggling bit 0
+    _set = track.element
+    for child in _set:
+        if isinstance(child, list) and child and child[0] == "PLAYOFFS":
+            child[2] = "3"
+    track.play_offset_enabled = True
+    assert track.play_offset_enabled
+    for child in _set:
+        if isinstance(child, list) and child and child[0] == "PLAYOFFS":
+            assert child[2] == "2"
+
+
+def test_add_track_and_position(project):
+    before = len(project.tracks)
+    added = project.add_track("New Bus")
+    assert len(project.tracks) == before + 1
+    assert added.name == "New Bus"
+    assert project.tracks[-1].name == "New Bus"
+    first = project.add_track("First", index=0)
+    assert project.tracks[0].name == "First"
+    assert first.index == 0
+    assert Project.loads(project.dumps()).tracks[0].name == "First"
+
+
+def test_add_and_remove_receive(project):
+    source = project.tracks[0]
+    dest = project.add_track("Reverb")
+    dest.add_receive(source, 0.25)
+    assert dest.receives == [(source.index, pytest.approx(0.25))]
+    # adding again replaces rather than duplicating
+    dest.add_receive(source, 0.5)
+    assert dest.receives == [(source.index, pytest.approx(0.5))]
+    assert Project.loads(project.dumps()).tracks[-1].receives == [
+        (source.index, pytest.approx(0.5))]
+    dest.remove_receive(source)
+    assert dest.receives == []
+
+
+def test_receive_from_self_is_rejected(project):
+    track = project.tracks[0]
+    with pytest.raises(ValueError):
+        track.add_receive(track)
+
+
+def test_volume_envelope_roundtrips(project):
+    track = project.tracks[0]
+    track.set_volume_envelope([(0.0, 1.0), (10.0, 0.5), (20.0, 2.0)])
+    reloaded = Project.loads(project.dumps()).tracks[0]
+    env = reloaded.element.find("VOLENV2")
+    points = [c for c in env if isinstance(c, list) and c and c[0] == "PT"]
+    assert [float(p[1]) for p in points] == [0.0, 10.0, 20.0]
+    assert [float(p[2]) for p in points] == pytest.approx([1.0, 0.5, 2.0])
+    # replacing leaves exactly one envelope behind
+    reloaded.set_volume_envelope([(0.0, 1.0)])
+    assert len([c for c in reloaded.element if getattr(c, "tag", None) == "VOLENV2"]) == 1
+
+
+def test_item_move_to_track(project):
+    source = project.tracks[0]
+    dest = project.add_track("Destination")
+    item = source.items[0]
+    before = (item.position, item.length, item.soffs)
+    count = len(source.items)
+    item.move_to(dest)
+    assert len(source.items) == count - 1
+    assert len(dest.items) == 1
+    reloaded = Project.loads(project.dumps())
+    moved = [t for t in reloaded.tracks if t.name == "Destination"][0].items[0]
+    assert (moved.position, moved.length, moved.soffs) == before

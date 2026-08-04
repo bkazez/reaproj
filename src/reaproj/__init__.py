@@ -135,6 +135,46 @@ class Project:
         children.insert(index + 1, tail)
         return Region(head, tail)
 
+    def add_track(self, name, index=None):
+        """Insert a new track, by default at the end. `index` is an ordinal
+        among existing tracks, so 0 puts it first."""
+        guid = "{" + str(uuid.uuid4()).upper() + "}"
+        element = _rpp.Element(tag="TRACK", attrib=[guid], children=[
+            ["NAME", name],
+            ["PEAKCOL", "16576"],
+            ["BEAT", "-1"],
+            ["AUTOMODE", "0"],
+            ["PANLAWFLAGS", "3"],
+            ["VOLPAN", "1", "0", "-1", "-1", "1"],
+            ["MUTESOLO", "0", "0", "0"],
+            ["IPHASE", "0"],
+            ["PLAYOFFS", "0", "1"],
+            ["ISBUS", "0", "0"],
+            ["BUSCOMP", "0", "0", "0", "0", "0"],
+            ["SHOWINMIX", "1", "0.6667", "0.5", "1", "0.5", "0", "0", "0", "0"],
+            ["FIXEDLANES", "9", "0", "0", "0", "0"],
+            ["LANEREC", "-1", "-1", "-1", "0"],
+            ["SEL", "0"],
+            ["REC", "0", "1027", "1", "0", "0", "0", "0", "0"],
+            ["VU", "64"],
+            ["TRACKHEIGHT", "25", "0", "0", "0", "0", "0", "0"],
+            ["INQ", "0", "0", "0", "0.5", "100", "0", "0", "100"],
+            ["NCHAN", "2"],
+            ["FX", "1"],
+            ["TRACKID", guid],
+            ["PERF", "0"],
+            ["MIDIOUT", "-1"],
+            ["MAINSEND", "1", "0"],
+        ])
+        positions = [i for i, c in enumerate(self.element)
+                     if getattr(c, "tag", None) == "TRACK"]
+        if index is None or index >= len(positions):
+            at = positions[-1] + 1 if positions else len(list(self.element))
+        else:
+            at = positions[index]
+        self.element.insert(at, element)
+        return Track(element, self)
+
     @property
     def render(self):
         return RenderSettings(self.element)
@@ -171,9 +211,111 @@ class Track:
         leaf = _leaf(self.element, "NAME")
         return leaf[1] if leaf and len(leaf) > 1 else ""
 
+    @name.setter
+    def name(self, value):
+        _set_leaf(self.element, "NAME", value)
+
     @property
     def items(self):
         return [Item(el, self.project) for el in self.element.iterfind("ITEM")]
+
+    @property
+    def index(self):
+        """Ordinal position among the project's tracks, as AUXRECV refers to it."""
+        if self.project is None:
+            raise ValueError("Track was created without a project.")
+        for i, el in enumerate(self.project.element.iterfind("TRACK")):
+            if el is self.element:
+                return i
+        raise ValueError("Track is not part of its project.")
+
+    # VOLPAN <volume> <pan> ... — volume is linear amplitude, pan runs -1..1.
+    volume = property(lambda self: _get_field(self.element, "VOLPAN", 0),
+                      lambda self, v: _set_field(self.element, "VOLPAN", 0, _num(v)))
+    pan = property(lambda self: _get_field(self.element, "VOLPAN", 1),
+                   lambda self, v: _set_field(self.element, "VOLPAN", 1, _num(v)))
+
+    @property
+    def muted(self):
+        return bool(_get_field(self.element, "MUTESOLO", 0))
+
+    @muted.setter
+    def muted(self, value):
+        _set_field(self.element, "MUTESOLO", 0, "1" if value else "0")
+
+    # PLAYOFFS <seconds> <flags>; flag bit 0 disables, bit 1 means samples.
+    play_offset = property(lambda self: _get_field(self.element, "PLAYOFFS", 0),
+                           lambda self, v: _set_field(self.element, "PLAYOFFS", 0, _num(v)))
+
+    @property
+    def play_offset_enabled(self):
+        flags = _get_field(self.element, "PLAYOFFS", 1)
+        return flags is not None and int(flags) & 1 == 0
+
+    @play_offset_enabled.setter
+    def play_offset_enabled(self, value):
+        flags = int(_get_field(self.element, "PLAYOFFS", 1) or 0)
+        _set_field(self.element, "PLAYOFFS", 1, str(flags & ~1 if value else flags | 1))
+
+    @property
+    def folder(self):
+        """ISBUS as (depth, delta): (1, 1) opens a folder, (2, -1) closes one,
+        (0, 0) is an ordinary track. A track closing several folders at once
+        carries a delta below -1."""
+        leaf = _leaf(self.element, "ISBUS")
+        if leaf is None or len(leaf) < 3:
+            return (0, 0)
+        return (int(leaf[1]), int(leaf[2]))
+
+    @folder.setter
+    def folder(self, value):
+        depth, delta = value
+        _set_leaf(self.element, "ISBUS", str(depth), str(delta))
+
+    def add_receive(self, source, volume=1.0, pan=0.0, mode=0):
+        """Receive audio from another track. REAPER stores a send on the
+        receiving track, so this is what a send looks like from the far end."""
+        if source.index == self.index:
+            raise ValueError("A track cannot receive from itself.")
+        self.remove_receive(source)
+        leaf = ["AUXRECV", str(source.index), str(mode), _num(volume), _num(pan),
+                "0", "0", "0", "0", "0", "-1:U", "0", "-1", "''"]
+        self.element.insert(_receive_insert_index(self.element), leaf)
+        return leaf
+
+    def remove_receive(self, source):
+        wanted = str(source.index)
+        for child in list(self.element):
+            if isinstance(child, list) and child and child[0] == "AUXRECV" and child[1] == wanted:
+                self.element.remove(child)
+
+    @property
+    def receives(self):
+        return [(int(c[1]), float(c[3])) for c in self.element
+                if isinstance(c, list) and c and c[0] == "AUXRECV"]
+
+    def set_volume_envelope(self, points, square=True):
+        """Replace the track volume envelope with `points`, an iterable of
+        (time, linear_gain). Square shape holds each value until the next point,
+        which is what a per-section level wants; linear would ramp between them."""
+        for child in list(self.element):
+            if getattr(child, "tag", None) == "VOLENV2":
+                self.element.remove(child)
+        shape = "1" if square else "0"
+        children = [
+            ["EGUID", "{" + str(uuid.uuid4()).upper() + "}"],
+            ["ACT", "1", "-1"],
+            ["VIS", "1", "1", "1"],
+            ["LANEHEIGHT", "0", "0"],
+            ["ARM", "0"],
+            ["DEFSHAPE", shape, "-1", "-1"],
+            ["VOLTYPE", "1"],
+        ]
+        for time, gain in points:
+            children.append(["PT", _num(time), _num(gain), shape])
+        env = _rpp.Element(tag="VOLENV2", attrib=[], children=children)
+        self.element.insert(_receive_insert_index(self.element), env)
+        return env
 
 
 class Item:
@@ -187,6 +329,16 @@ class Item:
                       lambda self, v: _set_leaf(self.element, "LENGTH", _num(v)))
     soffs = property(lambda self: _get_float(self.element, "SOFFS"),
                      lambda self, v: _set_leaf(self.element, "SOFFS", _num(v)))
+
+    def move_to(self, track):
+        """Move this item onto another track, keeping its position and source."""
+        for candidate in self.project.element.iterfind("TRACK") if self.project else []:
+            for child in list(candidate):
+                if child is self.element:
+                    candidate.remove(child)
+                    break
+        track.element.append(self.element)
+        return self
 
     @property
     def source_path(self):
@@ -332,6 +484,41 @@ def _set_leaf(element, key, *values):
         element.insert(0, [key, *values])
     else:
         leaf[1:] = list(values)
+
+
+def _get_field(element, key, offset):
+    leaf = _leaf(element, key)
+    if leaf is None or len(leaf) <= offset + 1:
+        return None
+    return float(leaf[offset + 1])
+
+
+# What REAPER writes for a default track, used when a line is absent entirely.
+_TRACK_DEFAULTS = {
+    "VOLPAN": ["1", "0", "-1", "-1", "1"],
+    "MUTESOLO": ["0", "0", "0"],
+    "PLAYOFFS": ["0", "1"],
+    "ISBUS": ["0", "0"],
+}
+
+
+def _set_field(element, key, offset, value):
+    leaf = _leaf(element, key)
+    if leaf is None:
+        leaf = [key, *_TRACK_DEFAULTS.get(key, ["0"])]
+        element.insert(_receive_insert_index(element), leaf)
+    while len(leaf) <= offset + 1:
+        leaf.append("0")
+    leaf[offset + 1] = value
+
+
+def _receive_insert_index(element):
+    """AUXRECV and envelope blocks belong after the track's scalar settings but
+    before its FX chain and items, which is where REAPER writes them."""
+    for i, child in enumerate(element):
+        if getattr(child, "tag", None) in ("FXCHAIN", "FXCHAIN_REC", "ITEM"):
+            return i
+    return len(list(element))
 
 
 def _num(value):
