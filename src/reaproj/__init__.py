@@ -411,6 +411,36 @@ class Item:
                 if isinstance(child, list) and child and child[0] == "GROUP":
                     self.element.remove(child)
 
+    def split(self, at):
+        """Cut this item in two at project time `at`; returns the new right half.
+
+        Both halves keep the same source, and the right half's SOFFS advances by
+        however much of the source the left half now covers, so the audio does
+        not move. Needed before per-take gain means anything: one clip carrying
+        several takes can only hold one gain value.
+        """
+        if not (self.position < at < self.position + self.length):
+            raise ValueError(f"{at} is outside the item")
+        import copy as _copy
+        right = _copy.deepcopy(self.element)
+        for leaf in right:
+            if isinstance(leaf, list) and leaf and leaf[0] in ("IGUID", "GUID"):
+                leaf[1] = "{" + str(uuid.uuid4()).upper() + "}"
+        left_len = at - self.position
+        item = Item(right, self.project)
+        item.position = at
+        item.length = self.length - left_len
+        item.soffs = (self.soffs or 0.0) + left_len
+        self.length = left_len
+        # sit the new half straight after this one on the same track
+        for track in (self.project.element.iterfind("TRACK") if self.project else []):
+            children = list(track)
+            for i, child in enumerate(children):
+                if child is self.element:
+                    track.insert(i + 1, right)
+                    return item
+        return item
+
     def move_to(self, track):
         """Move this item onto another track, keeping its position and source."""
         for candidate in self.project.element.iterfind("TRACK") if self.project else []:

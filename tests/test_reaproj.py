@@ -335,3 +335,26 @@ def test_item_volume_roundtrips(project):
     item.volume = 0.5
     reloaded = Project.loads(project.dumps()).tracks[0].items[0]
     assert reloaded.volume == pytest.approx(0.5)
+
+
+def test_item_split_keeps_audio_in_place(project):
+    track = project.tracks[0]
+    item = track.items[0]
+    start, length, soffs = item.position, item.length, item.soffs or 0.0
+    at = start + length / 3
+    right = item.split(at)
+    assert item.position == start
+    assert item.length == pytest.approx(at - start)
+    assert right.position == pytest.approx(at)
+    assert right.length == pytest.approx(start + length - at)
+    # the source offset advances by exactly what the left half now covers
+    assert right.soffs == pytest.approx(soffs + (at - start))
+    assert len(track.items) == 2
+    reloaded = Project.loads(project.dumps()).tracks[0]
+    assert len(reloaded.items) == 2
+
+
+def test_item_split_outside_bounds_is_rejected(project):
+    item = project.tracks[0].items[0]
+    with pytest.raises(ValueError):
+        item.split(item.position - 1)
