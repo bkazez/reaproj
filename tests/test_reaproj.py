@@ -302,8 +302,9 @@ def test_item_group_roundtrips(project):
 
 
 def _with_interleaved_regions():
-    """Two regions that nest: REAPER sorts markers by position, so the inner
-    region's start and end both fall between the outer region's two lines."""
+    """Two regions that nest, with the halves not adjacent. REAPER itself keeps
+    a pair together, but nothing guarantees that for a hand-written or
+    tool-written file, and pairing by id should not depend on the ordering."""
     return FIXTURE.replace(
         "  RENDER_FILE",
         '  MARKER 7 10 outer 1 0 1 B {AAAAAAAA-0000-0000-0000-000000000007} 0\n'

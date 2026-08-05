@@ -114,13 +114,16 @@ class Project:
     def regions(self):
         """Regions, paired by marker id.
 
-        REAPER writes a region as two MARKER lines sharing an id — one at the
-        start carrying the name, one at the end — and sorts every marker by
-        position. The two halves are therefore NOT adjacent whenever another
-        region begins or ends between them, which is constant in a session of
-        back-to-back takes. Pairing by document order silently mates one
-        region's start with another's end, and the caller gets a region
-        spanning two unrelated takes.
+        A region is two MARKER lines sharing an id: one at the start carrying
+        the name, one at the end. REAPER writes the pair adjacently, so pairing
+        by document order happens to work on the files it produces — measured
+        across a 375-region project with 9 interleaved regions, it agreed
+        everywhere.
+
+        Pair by id anyway. It is correct by construction rather than by luck,
+        it does not care what order a file arrives in, and a file written by
+        anything other than REAPER — including these tools, which insert
+        regions at the end of the marker block — has no such guarantee.
         """
         by_id, order = {}, []
         for tokens in self._marker_leaves():
