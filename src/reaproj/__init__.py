@@ -112,15 +112,34 @@ class Project:
 
     @property
     def regions(self):
-        regions, pending = [], None
+        """Regions, paired by marker id.
+
+        REAPER writes a region as two MARKER lines sharing an id — one at the
+        start carrying the name, one at the end — and sorts every marker by
+        position. The two halves are therefore NOT adjacent whenever another
+        region begins or ends between them, which is constant in a session of
+        back-to-back takes. Pairing by document order silently mates one
+        region's start with another's end, and the caller gets a region
+        spanning two unrelated takes.
+        """
+        by_id, order = {}, []
         for tokens in self._marker_leaves():
             if not _is_region_boundary(tokens):
                 continue
-            if pending is None:
-                pending = tokens
-            else:
-                regions.append(Region(pending, tokens))
-                pending = None
+            key = tokens[1]
+            if key not in by_id:
+                by_id[key] = []
+                order.append(key)
+            by_id[key].append(tokens)
+
+        regions = []
+        for key in order:
+            pair = by_id[key]
+            if len(pair) != 2:
+                continue                     # malformed: leave it for a human
+            head, tail = sorted(pair, key=lambda t: float(t[2]))
+            regions.append(Region(head, tail))
+        regions.sort(key=lambda r: r.start)
         return regions
 
     def remove_region(self, region):

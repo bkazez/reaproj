@@ -299,3 +299,31 @@ def test_item_group_roundtrips(project):
     reloaded.group = 0
     assert reloaded.group == 0
     assert "GROUP" not in Project.loads(reloaded.project.dumps()).dumps() or True
+
+
+def _with_interleaved_regions():
+    """Two regions that nest: REAPER sorts markers by position, so the inner
+    region's start and end both fall between the outer region's two lines."""
+    return FIXTURE.replace(
+        "  RENDER_FILE",
+        '  MARKER 7 10 outer 1 0 1 B {AAAAAAAA-0000-0000-0000-000000000007} 0\n'
+        '  MARKER 8 20 inner 1 0 1 B {AAAAAAAA-0000-0000-0000-000000000008} 0\n'
+        '  MARKER 8 30 "" 1\n'
+        '  MARKER 7 40 "" 1\n'
+        "  RENDER_FILE", 1)
+
+
+def test_regions_pair_by_id_not_document_order():
+    regions = {r.name: (r.start, r.end) for r in Project.loads(_with_interleaved_regions()).regions}
+    assert regions["outer"] == (10.0, 40.0)
+    assert regions["inner"] == (20.0, 30.0)
+
+
+def test_interleaved_regions_survive_a_rename():
+    project = Project.loads(_with_interleaved_regions())
+    for r in project.regions:
+        if r.name in ("outer", "inner"):
+            r.name = r.name.upper()
+    again = {r.name: (r.start, r.end) for r in Project.loads(project.dumps()).regions}
+    assert again["OUTER"] == (10.0, 40.0)
+    assert again["INNER"] == (20.0, 30.0)
