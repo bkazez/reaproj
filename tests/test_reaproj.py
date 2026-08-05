@@ -359,3 +359,33 @@ def test_item_split_outside_bounds_is_rejected(project):
     item = project.tracks[0].items[0]
     with pytest.raises(ValueError):
         item.split(item.position - 1)
+
+
+def test_add_marker_roundtrips(project):
+    markers_before = len(project.markers)
+    regions_before = len(project.regions)
+    project.add_marker(42.5, "different mic setup")
+    reloaded = Project.loads(project.dumps())
+    added = [m for m in reloaded.markers if m.name == "different mic setup"]
+    assert len(added) == 1
+    assert added[0].position == 42.5
+    assert len(reloaded.markers) == markers_before + 1
+    # a marker is not half a region: the region pairing must be untouched
+    assert len(reloaded.regions) == regions_before
+
+
+def test_remove_item(project):
+    track = project.tracks[0]
+    before = len(track.items)
+    assert before > 0
+    doomed = track.items[0]
+    assert track.remove_item(doomed) is True
+    assert len(track.items) == before - 1
+    assert len(Project.loads(project.dumps()).tracks[0].items) == before - 1
+
+
+def test_remove_item_rejects_an_item_from_another_track(project):
+    owner = project.tracks[0]
+    stranger = project.add_track("elsewhere")
+    assert stranger.remove_item(owner.items[0]) is False
+    assert len(owner.items) == len(Project.loads(project.dumps()).tracks[0].items)

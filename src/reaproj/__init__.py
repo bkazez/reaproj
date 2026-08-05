@@ -165,6 +165,19 @@ class Project:
         children.insert(index + 1, tail)
         return Region(head, tail)
 
+    def add_marker(self, position, name):
+        """Append a plain marker; returns the new Marker.
+
+        The same MARKER line as a region's, with the region bit in column 5
+        clear and no closing line — which is the whole difference between the
+        two in the format.
+        """
+        marker_id = max((int(t[1]) for t in self._marker_leaves()), default=0) + 1
+        guid = "{" + str(uuid.uuid4()).upper() + "}"
+        tokens = ["MARKER", str(marker_id), _num(position), name, "0", "0", "1", "R", guid, "0"]
+        self.element.insert(self._marker_insert_index(), tokens)
+        return Marker(tokens)
+
     def add_track(self, name, index=None):
         """Insert a new track, by default at the end. `index` is an ordinal
         among existing tracks, so 0 puts it first."""
@@ -248,6 +261,15 @@ class Track:
     @property
     def items(self):
         return [Item(el, self.project) for el in self.element.iterfind("ITEM")]
+
+    def remove_item(self, item):
+        """Delete an item from this track. Identity, not equality: two takes of
+        the same source at the same position are different items."""
+        for child in list(self.element):
+            if child is item.element:
+                self.element.remove(child)
+                return True
+        return False
 
     @property
     def index(self):
