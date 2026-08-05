@@ -388,6 +388,12 @@ class Item:
     soffs = property(lambda self: _get_float(self.element, "SOFFS"),
                      lambda self, v: _set_leaf(self.element, "SOFFS", _num(v)))
 
+    # VOLPAN <volume> <pan> ... on an item, same shape as a track's
+    volume = property(lambda self: _get_field(self.element, "VOLPAN", 0),
+                      lambda self, v: _set_field(self.element, "VOLPAN", 0, _num(v)))
+    pan = property(lambda self: _get_field(self.element, "VOLPAN", 1),
+                   lambda self, v: _set_field(self.element, "VOLPAN", 1, _num(v)))
+
     @property
     def group(self):
         """Item group id, or 0 for ungrouped. Items sharing an id are selected
@@ -591,7 +597,7 @@ def _get_field(element, key, offset):
 
 # What REAPER writes for a default track, used when a line is absent entirely.
 _TRACK_DEFAULTS = {
-    "VOLPAN": ["1", "0", "-1", "-1", "1"],
+    "VOLPAN": ["1", "0", "1", "-1"],
     "MUTESOLO": ["0", "0", "0"],
     "PLAYOFFS": ["0", "1"],
     "ISBUS": ["0", "0"],

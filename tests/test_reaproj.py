@@ -328,3 +328,10 @@ def test_interleaved_regions_survive_a_rename():
     again = {r.name: (r.start, r.end) for r in Project.loads(project.dumps()).regions}
     assert again["OUTER"] == (10.0, 40.0)
     assert again["INNER"] == (20.0, 30.0)
+
+
+def test_item_volume_roundtrips(project):
+    item = project.tracks[0].items[0]
+    item.volume = 0.5
+    reloaded = Project.loads(project.dumps()).tracks[0].items[0]
+    assert reloaded.volume == pytest.approx(0.5)
