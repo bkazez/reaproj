@@ -2,7 +2,7 @@ import textwrap
 
 import pytest
 
-from reaproj import Project, RenderBounds, RENDER_FORMATS
+from reaproj import Item, Project, RenderBounds, RENDER_FORMATS
 
 FIXTURE = textwrap.dedent("""\
     <REAPER_PROJECT 0.1 "7.59/macOS-arm64" 1700000000 0
@@ -424,3 +424,67 @@ def test_remove_fx_takes_the_whole_slot(project):
     # the reloaded chain must not carry orphaned FXID/WAK lines for it
     reloaded = Project.loads(project.dumps()).tracks[0]
     assert len(reloaded.fx) == before - 1
+
+
+def test_new_project_is_empty_and_reloadable():
+    project = Project.new()
+    assert project.tracks == []
+    assert Project.loads(project.dumps()).tracks == []
+
+
+def test_add_item_roundtrips():
+    project = Project.new()
+    track = project.add_track("Comp")
+    item = track.add_item("Media/take.wav", position=2.5, length=8.0, soffs=31.25)
+    assert item.name == "take.wav"
+
+    reloaded = Project.loads(project.dumps()).tracks[0].items
+    assert len(reloaded) == 1
+    assert (reloaded[0].position, reloaded[0].length, reloaded[0].soffs) == (2.5, 8.0, 31.25)
+    assert reloaded[0].source_path.name == "take.wav"
+
+
+def test_add_item_names_the_source_block_by_container():
+    project = Project.new()
+    track = project.add_track("Comp")
+    track.add_item("a.mp3", 0, 1)
+    track.add_item("b.flac", 1, 1)
+    track.add_item("c.aiff", 2, 1)
+    text = project.dumps()
+    assert "<SOURCE MP3" in text and "<SOURCE FLAC" in text and "<SOURCE WAVE" in text
+
+
+def test_added_item_does_not_loop():
+    # REAPER's own default is LOOP 1, which silently repeats a source that is
+    # shorter than the item -- never what a comp wants.
+    project = Project.new()
+    project.add_track("Comp").add_item("a.wav", 0, 60)
+    assert "LOOP 0" in project.dumps()
+
+
+def test_item_fades_roundtrip():
+    project = Project.new()
+    item = project.add_track("Comp").add_item("a.wav", 0, 10)
+    assert (item.fade_in, item.fade_out) == (0.0, 0.0)
+    item.fade_in = 0.015
+    item.fade_in_shape = Item.EQUAL_POWER
+    item.fade_out = 0.02
+    item.fade_out_shape = Item.EQUAL_GAIN
+
+    reloaded = Project.loads(project.dumps()).tracks[0].items[0]
+    assert reloaded.fade_in == 0.015 and reloaded.fade_in_shape == Item.EQUAL_POWER
+    assert reloaded.fade_out == 0.02 and reloaded.fade_out_shape == Item.EQUAL_GAIN
+
+
+def test_existing_item_fades_are_readable(project):
+    # the fixture project's items carry REAPER-written FADEIN/FADEOUT lines
+    item = project.tracks[0].items[0]
+    assert isinstance(item.fade_in, float)
+    item.fade_out = 3.0
+    assert Project.loads(project.dumps()).tracks[0].items[0].fade_out == 3.0
+
+
+def test_item_name_is_settable(project):
+    item = project.tracks[0].items[0]
+    item.name = "renamed"
+    assert Project.loads(project.dumps()).tracks[0].items[0].name == "renamed"

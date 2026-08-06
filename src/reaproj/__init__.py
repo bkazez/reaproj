@@ -81,6 +81,46 @@ class Project:
     def loads(cls, text):
         return cls(_rpp.loads(text))
 
+    @classmethod
+    def new(cls, path=None, sample_rate=48000):
+        """An empty project, for tools that build one rather than edit one.
+
+        Only the lines REAPER needs to open the file and not lose anything on
+        the next save; it fills in the rest itself. RENDER_CFG is present but
+        empty so `project.render.format` has something to set.
+        """
+        element = _rpp.Element(tag="REAPER_PROJECT", attrib=["0.1", "7.0", "0"], children=[
+            ["RIPPLE", "0"],
+            ["GROUPOVERRIDE", "0", "0", "0"],
+            ["AUTOXFADE", "1"],
+            ["SAMPLERATE", str(int(sample_rate)), "0", "0"],
+            ["TEMPO", "120", "4", "4"],
+            ["PLAYRATE", "1", "0", "0.25", "4"],
+            ["SELECTION", "0", "0"],
+            ["MASTERAUTOMODE", "0"],
+            ["MASTERTRACKHEIGHT", "0", "0"],
+            ["MASTERPEAKCOL", "16576"],
+            ["MASTERMUTESOLO", "0"],
+            ["MASTERTRACKVIEW", "0", "0.6667", "0.5", "0.5", "0", "0", "0",
+             "0", "0", "0", "0", "0", "0"],
+            ["MASTERHWOUT", "0", "0", "1", "0", "0", "0", "0", "-1"],
+            ["MASTER_NCH", "2", "2"],
+            ["MASTER_VOLUME", "1", "0", "-1", "-1", "1"],
+            ["MASTER_FX", "1"],
+            ["MASTER_SEL", "0"],
+            ["RENDER_FILE", ""],
+            ["RENDER_PATTERN", ""],
+            ["RENDER_FMT", "0", "2", "0"],
+            ["RENDER_1X", "0"],
+            ["RENDER_RANGE", "1", "0", "0", "18", "1000"],
+            ["RENDER_RESAMPLE", "3", "0", "1"],
+            ["RENDER_ADDTOPROJ", "0"],
+            ["RENDER_STEMS", "0"],
+            ["RENDER_DITHER", "0"],
+            _rpp.Element(tag="RENDER_CFG", attrib=[], children=[]),
+        ])
+        return cls(element, path)
+
     def dumps(self):
         return _rpp.dumps(self.element)
 
@@ -397,6 +437,49 @@ class Track:
         return [(int(c[1]), float(c[3])) for c in self.element
                 if isinstance(c, list) and c and c[0] == "AUXRECV"]
 
+    # REAPER names the source block by container, not by codec.
+    SOURCE_TYPES = {
+        ".wav": "WAVE", ".aif": "WAVE", ".aiff": "WAVE", ".w64": "WAVE",
+        ".mp3": "MP3", ".flac": "FLAC", ".ogg": "VORBIS", ".opus": "OPUS",
+        ".m4a": "VIDEO", ".mp4": "VIDEO", ".mov": "VIDEO",
+    }
+
+    def add_item(self, source, position, length, soffs=0.0, name=None):
+        """Append a media item playing `source` from `soffs` for `length`.
+
+        `source` is a path; it is written as given, so pass one relative to the
+        project if the project is meant to be movable. Fades default to zero --
+        set `fade_in`/`fade_out` on the returned item, which is where a comp's
+        crossfades come from.
+        """
+        source = Path(source)
+        kind = self.SOURCE_TYPES.get(source.suffix.lower(), "WAVE")
+        guid = "{" + str(uuid.uuid4()).upper() + "}"
+        element = _rpp.Element(tag="ITEM", attrib=[], children=[
+            ["POSITION", _num(position)],
+            ["SNAPOFFS", "0"],
+            ["LENGTH", _num(length)],
+            # LOOP 0: a comp item must never repeat its source to fill its length.
+            # REAPER's own default is 1, and the failure it causes is silent.
+            ["LOOP", "0"],
+            ["ALLTAKES", "0"],
+            ["FADEIN", "0", "0", "0", "0", "0", "0", "0"],
+            ["FADEOUT", "0", "0", "0", "0", "0", "0", "0"],
+            ["MUTE", "0", "0"],
+            ["SEL", "0"],
+            ["IGUID", "{" + str(uuid.uuid4()).upper() + "}"],
+            ["NAME", name or source.name],
+            ["VOLPAN", "1", "0", "1", "-1"],
+            ["SOFFS", _num(soffs)],
+            ["PLAYRATE", "1", "1", "0", "-1", "0", "0.0025"],
+            ["CHANMODE", "0"],
+            ["GUID", guid],
+            _rpp.Element(tag="SOURCE", attrib=[kind],
+                         children=[["FILE", str(source)]]),
+        ])
+        self.element.append(element)
+        return Item(element, self.project)
+
     def set_volume_envelope(self, points, square=True):
         """Replace the track volume envelope with `points`, an iterable of
         (time, linear_gain). Square shape holds each value until the next point,
@@ -483,6 +566,35 @@ class Item:
             for child in list(self.element):
                 if isinstance(child, list) and child and child[0] == "GROUP":
                     self.element.remove(child)
+
+    # FADEIN/FADEOUT <shape> <length> <auto_length> <auto_shape> <?> <curve> <?>
+    # Shape 5 is REAPER's equal-power (raised-cosine) curve, which is what a
+    # crossfade between two different takes wants: powers add, so a correctly
+    # placed one is dip-free by construction. Shape 0 (linear, equal-gain)
+    # belongs to material spliced to itself. See reaper-tools docs/crossfades.md.
+    EQUAL_POWER = 5
+    EQUAL_GAIN = 0
+
+    fade_in = property(
+        lambda self: _get_field(self.element, "FADEIN", 1) or 0.0,
+        lambda self, v: _set_field(self.element, "FADEIN", 1, _num(v)))
+    fade_out = property(
+        lambda self: _get_field(self.element, "FADEOUT", 1) or 0.0,
+        lambda self, v: _set_field(self.element, "FADEOUT", 1, _num(v)))
+    fade_in_shape = property(
+        lambda self: int(_get_field(self.element, "FADEIN", 0) or 0),
+        lambda self, v: _set_field(self.element, "FADEIN", 0, str(int(v))))
+    fade_out_shape = property(
+        lambda self: int(_get_field(self.element, "FADEOUT", 0) or 0),
+        lambda self, v: _set_field(self.element, "FADEOUT", 0, str(int(v))))
+
+    @property
+    def name(self):
+        return _leaf_value(self.element, "NAME") or ""
+
+    @name.setter
+    def name(self, value):
+        _set_leaf(self.element, "NAME", str(value))
 
     def split(self, at):
         """Cut this item in two at project time `at`; returns the new right half.
