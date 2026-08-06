@@ -262,6 +262,62 @@ class Track:
     def items(self):
         return [Item(el, self.project) for el in self.element.iterfind("ITEM")]
 
+    FX_TAGS = ("VST", "AU", "JS", "CLAP", "LV2", "DX")
+
+    @property
+    def fx(self):
+        """Plugin names on this track, in chain order."""
+        names = []
+        for chain in self.element:
+            if getattr(chain, "tag", None) != "FXCHAIN":
+                continue
+            for child in chain:
+                if getattr(child, "tag", None) in self.FX_TAGS and child.attrib:
+                    names.append(str(child.attrib[0]))
+        return names
+
+    def remove_fx(self, match):
+        """Delete every plugin whose name contains `match`; returns what went.
+
+        A slot in an FXCHAIN is more than its element: a `BYPASS` line precedes
+        it and `PRESETNAME`, `FLOATPOS`, `FXID` and `WAK` trail it, up to the
+        next `BYPASS`. Removing only the element leaves that debris behind,
+        which REAPER then attaches to whichever plugin follows — so the trailing
+        lines go with it.
+        """
+        removed = []
+        for chain in self.element:
+            if getattr(chain, "tag", None) != "FXCHAIN":
+                continue
+            while True:
+                children = list(chain)
+                target = None
+                for index, child in enumerate(children):
+                    if (getattr(child, "tag", None) in self.FX_TAGS and child.attrib
+                            and match in str(child.attrib[0])):
+                        target = index
+                        break
+                if target is None:
+                    break
+
+                start = target
+                if start and isinstance(children[start - 1], list) \
+                        and children[start - 1][0] == "BYPASS":
+                    start -= 1
+                end = target + 1
+                while end < len(children):
+                    following = children[end]
+                    if getattr(following, "tag", None) in self.FX_TAGS:
+                        break
+                    if isinstance(following, list) and following[0] == "BYPASS":
+                        break
+                    end += 1
+
+                removed.append(str(children[target].attrib[0]))
+                for child in children[start:end]:
+                    chain.remove(child)
+        return removed
+
     def remove_item(self, item):
         """Delete an item from this track. Identity, not equality: two takes of
         the same source at the same position are different items."""

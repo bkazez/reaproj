@@ -389,3 +389,16 @@ def test_remove_item_rejects_an_item_from_another_track(project):
     stranger = project.add_track("elsewhere")
     assert stranger.remove_item(owner.items[0]) is False
     assert len(owner.items) == len(Project.loads(project.dumps()).tracks[0].items)
+
+
+def test_remove_fx_takes_the_whole_slot(project):
+    track = project.tracks[0]
+    if not track.fx:
+        return
+    name = track.fx[0]
+    before = len(track.fx)
+    removed = track.remove_fx(name)
+    assert removed and len(track.fx) == before - 1
+    # the reloaded chain must not carry orphaned FXID/WAK lines for it
+    reloaded = Project.loads(project.dumps()).tracks[0]
+    assert len(reloaded.fx) == before - 1
