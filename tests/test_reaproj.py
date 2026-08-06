@@ -240,6 +240,28 @@ def test_region_bounds_are_settable(project):
     assert reloaded.end == pytest.approx(12.25)
 
 
+def test_region_selection_roundtrips(project):
+    """Bit 3 of column 5, the only per-region render control the format has."""
+    verse, bridge = project.regions          # flags 1 and 5 in the fixture
+    assert (verse.selected, bridge.selected) == (False, False)
+
+    verse.selected = True
+    assert [r.selected for r in Project.loads(project.dumps()).regions] == [True, False]
+    # both lines of the pair carry the flag
+    assert [line.strip() for line in project.dumps().splitlines()
+            if line.strip().startswith("MARKER 2")] == [
+        "MARKER 2 20 Verse 9 0 1 B {AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE} 0",
+        'MARKER 2 30.25 "" 9']
+
+    bridge.selected = True                   # flags 5: bit 2 must survive
+    assert [line.strip() for line in project.dumps().splitlines()
+            if line.strip().startswith("MARKER 3 40")] == [
+        "MARKER 3 40 Bridge 13 0 1 B {AAAAAAAA-BBBB-CCCC-DDDD-FFFFFFFFFFFF} 0"]
+
+    verse.selected = False
+    assert [r.selected for r in Project.loads(project.dumps()).regions] == [False, True]
+
+
 def test_remove_region(project):
     before = len(project.regions)
     doomed = project.regions[0]

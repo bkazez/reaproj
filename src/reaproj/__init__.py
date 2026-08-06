@@ -585,6 +585,31 @@ class Region:
     def length(self):
         return self.end - self.start
 
+    @property
+    def selected(self):
+        """Whether REAPER considers this region selected.
+
+        Column 5 is a bitfield, not the boolean it resembles: bit 0 marks a
+        region, bit 3 marks it selected. That bit is the only per-region render
+        control the format has. With `RenderBounds.SELECTED_REGIONS` REAPER
+        renders exactly the regions carrying it -- and with *none* carrying it
+        falls back to rendering all of them, so a caller filtering regions down
+        to nothing ships everything unless it checks first. Measured 2026-08-06
+        over nine headless renders of a three-region project.
+
+        Both lines of the pair carry the flag, which is what REAPER writes.
+        """
+        return len(self.head) > 4 and bool(int(self.head[4]) & _REGION_SELECTED)
+
+    @selected.setter
+    def selected(self, value):
+        for tokens in (self.head, self.tail):
+            while len(tokens) <= 4:
+                tokens.append(str(_REGION_FLAG))
+            flags = int(tokens[4])
+            tokens[4] = str(flags | _REGION_SELECTED if value
+                            else flags & ~_REGION_SELECTED)
+
 
 class RenderSettings:
     """View over the project's RENDER_* lines; missing lines are created on set."""
@@ -778,10 +803,14 @@ def _remove_fx_from_chain(chain, match, tags):
             chain.remove(child)
 
 
+_REGION_FLAG = 1                 # column 5, bit 0: this MARKER line bounds a region
+_REGION_SELECTED = 8             # column 5, bit 3: the region is selected
+
+
 def _is_region_boundary(tokens):
     """Region lines carry an odd flag in column 5 (bit 0 = region; REAPER
     writes 1, or 5 when other flag bits are set)."""
     try:
-        return len(tokens) > 4 and int(tokens[4]) & 1 == 1
+        return len(tokens) > 4 and int(tokens[4]) & _REGION_FLAG == _REGION_FLAG
     except ValueError:
         return False
