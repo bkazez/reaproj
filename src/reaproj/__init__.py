@@ -263,13 +263,17 @@ class Track:
         return [Item(el, self.project) for el in self.element.iterfind("ITEM")]
 
     FX_TAGS = ("VST", "AU", "JS", "CLAP", "LV2", "DX")
+    # A track has two chains: FXCHAIN is what you hear, FXCHAIN_REC is input FX
+    # applied while recording. Metering plugins are routinely parked in the
+    # second, so anything that only walks the first misses them entirely.
+    FX_CHAINS = ("FXCHAIN", "FXCHAIN_REC")
 
     @property
     def fx(self):
         """Plugin names on this track, in chain order."""
         names = []
         for chain in self.element:
-            if getattr(chain, "tag", None) != "FXCHAIN":
+            if getattr(chain, "tag", None) not in self.FX_CHAINS:
                 continue
             for child in chain:
                 if getattr(child, "tag", None) in self.FX_TAGS and child.attrib:
@@ -287,7 +291,7 @@ class Track:
         """
         removed = []
         for chain in self.element:
-            if getattr(chain, "tag", None) != "FXCHAIN":
+            if getattr(chain, "tag", None) not in self.FX_CHAINS:
                 continue
             while True:
                 children = list(chain)
