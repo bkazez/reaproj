@@ -178,6 +178,31 @@ class Project:
         self.element.insert(self._marker_insert_index(), tokens)
         return Marker(tokens)
 
+    @property
+    def master_fx(self):
+        """Plugin names on the master bus.
+
+        Worth asking about explicitly: master FX are invisible when walking
+        tracks, so a limiter parked here silently shapes every measurement taken
+        from a render — an identical peak across unrelated takes is its
+        signature.
+        """
+        names = []
+        for chain in self.element:
+            if getattr(chain, "tag", None) == "MASTERFXLIST":
+                for child in chain:
+                    if getattr(child, "tag", None) in Track.FX_TAGS and child.attrib:
+                        names.append(str(child.attrib[0]))
+        return names
+
+    def remove_master_fx(self, match):
+        """Delete matching plugins from the master bus; returns what went."""
+        removed = []
+        for chain in self.element:
+            if getattr(chain, "tag", None) == "MASTERFXLIST":
+                removed += _remove_fx_from_chain(chain, match, Track.FX_TAGS)
+        return removed
+
     def add_track(self, name, index=None):
         """Insert a new track, by default at the end. `index` is an ordinal
         among existing tracks, so 0 puts it first."""
@@ -281,45 +306,11 @@ class Track:
         return names
 
     def remove_fx(self, match):
-        """Delete every plugin whose name contains `match`; returns what went.
-
-        A slot in an FXCHAIN is more than its element: a `BYPASS` line precedes
-        it and `PRESETNAME`, `FLOATPOS`, `FXID` and `WAK` trail it, up to the
-        next `BYPASS`. Removing only the element leaves that debris behind,
-        which REAPER then attaches to whichever plugin follows — so the trailing
-        lines go with it.
-        """
+        """Delete every plugin whose name contains `match`; returns what went."""
         removed = []
         for chain in self.element:
-            if getattr(chain, "tag", None) not in self.FX_CHAINS:
-                continue
-            while True:
-                children = list(chain)
-                target = None
-                for index, child in enumerate(children):
-                    if (getattr(child, "tag", None) in self.FX_TAGS and child.attrib
-                            and match in str(child.attrib[0])):
-                        target = index
-                        break
-                if target is None:
-                    break
-
-                start = target
-                if start and isinstance(children[start - 1], list) \
-                        and children[start - 1][0] == "BYPASS":
-                    start -= 1
-                end = target + 1
-                while end < len(children):
-                    following = children[end]
-                    if getattr(following, "tag", None) in self.FX_TAGS:
-                        break
-                    if isinstance(following, list) and following[0] == "BYPASS":
-                        break
-                    end += 1
-
-                removed.append(str(children[target].attrib[0]))
-                for child in children[start:end]:
-                    chain.remove(child)
+            if getattr(chain, "tag", None) in self.FX_CHAINS:
+                removed += _remove_fx_from_chain(chain, match, self.FX_TAGS)
         return removed
 
     def remove_item(self, item):
@@ -746,6 +737,45 @@ def _payload_str(child):
     if isinstance(child, list) and len(child) == 1 and isinstance(child[0], str):
         return child[0]
     return None
+
+
+
+def _remove_fx_from_chain(chain, match, tags):
+    """Delete matching plugins from one FX chain element; returns their names.
+
+    A slot is more than its element: a `BYPASS` line precedes it and
+    `PRESETNAME`, `FLOATPOS`, `FXID` and `WAK` trail it, up to the next slot.
+    Removing only the element leaves that debris behind, which REAPER then
+    attaches to whichever plugin follows.
+    """
+    removed = []
+    while True:
+        children = list(chain)
+        target = None
+        for index, child in enumerate(children):
+            if (getattr(child, "tag", None) in tags and child.attrib
+                    and match in str(child.attrib[0])):
+                target = index
+                break
+        if target is None:
+            return removed
+
+        start = target
+        if start and isinstance(children[start - 1], list) \
+                and children[start - 1][0] == "BYPASS":
+            start -= 1
+        end = target + 1
+        while end < len(children):
+            following = children[end]
+            if getattr(following, "tag", None) in tags:
+                break
+            if isinstance(following, list) and following[0] == "BYPASS":
+                break
+            end += 1
+
+        removed.append(str(children[target].attrib[0]))
+        for child in children[start:end]:
+            chain.remove(child)
 
 
 def _is_region_boundary(tokens):
