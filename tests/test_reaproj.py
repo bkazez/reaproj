@@ -462,6 +462,14 @@ def test_added_item_does_not_loop():
     assert "LOOP 0" in project.dumps()
 
 
+def test_equal_power_is_shape_one():
+    # Measured by splicing a file to itself: shape 1 bumps +3 dB (powers add),
+    # shape 5 stays flat (amplitudes add). Pinned because getting it backwards
+    # puts a ~3 dB dip in every crossfade between two different takes.
+    assert Item.EQUAL_POWER == 1
+    assert Item.EQUAL_GAIN == 0
+
+
 def test_item_fades_roundtrip():
     project = Project.new()
     item = project.add_track("Comp").add_item("a.wav", 0, 10)

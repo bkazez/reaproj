@@ -37,6 +37,7 @@ __version__ = "0.1.1"
 __all__ = [
     "Project",
     "Track",
+    "Fx",
     "Item",
     "Marker",
     "Region",
@@ -227,13 +228,12 @@ class Project:
         from a render — an identical peak across unrelated takes is its
         signature.
         """
-        names = []
-        for chain in self.element:
-            if getattr(chain, "tag", None) == "MASTERFXLIST":
-                for child in chain:
-                    if getattr(child, "tag", None) in Track.FX_TAGS and child.attrib:
-                        names.append(str(child.attrib[0]))
-        return names
+        return [slot.name for slot in self.master_fx_slots]
+
+    @property
+    def master_fx_slots(self):
+        """Every master-bus plugin as an `Fx`, so its state can be read or set."""
+        return _fx_slots(self.element, ("MASTERFXLIST",))
 
     def remove_master_fx(self, match):
         """Delete matching plugins from the master bus; returns what went."""
@@ -309,6 +309,53 @@ class Project:
         return len(list(self.element))
 
 
+class Fx:
+    """One plugin in a chain, and the settings blob underneath it.
+
+    `Track.fx` gives names, which is enough to find a plugin but not to change
+    how it is set. The settings are the base64 lines under the tag, handed over
+    whole: REAPER writes them as several independent base64 units rather than
+    one, and what is inside a unit differs per plugin, so the shapes are the
+    caller's business rather than this library's.
+    """
+
+    def __init__(self, element):
+        self.element = element
+
+    @property
+    def name(self):
+        return str(self.element.attrib[0]) if self.element.attrib else ""
+
+    @property
+    def state(self):
+        """The base64 lines under this plugin, in order."""
+        return [child for child in self.element.children if isinstance(child, str)]
+
+    @state.setter
+    def state(self, lines):
+        children = self.element.children
+        positions = [i for i, child in enumerate(children) if isinstance(child, str)]
+        start = positions[0] if positions else len(children)
+        for i in reversed(positions):
+            del children[i]
+        children[start:start] = list(lines)
+
+    def __repr__(self):
+        return f"Fx({self.name!r})"
+
+
+def _fx_slots(container, chain_tags):
+    """Every plugin inside the named chains of `container`, in chain order."""
+    slots = []
+    for chain in container:
+        if getattr(chain, "tag", None) not in chain_tags:
+            continue
+        for child in chain:
+            if getattr(child, "tag", None) in Track.FX_TAGS and child.attrib:
+                slots.append(Fx(child))
+    return slots
+
+
 class Track:
     def __init__(self, element, project=None):
         self.element = element
@@ -334,16 +381,14 @@ class Track:
     FX_CHAINS = ("FXCHAIN", "FXCHAIN_REC")
 
     @property
+    def fx_slots(self):
+        """Every plugin on this track as an `Fx`, so its state can be read or set."""
+        return _fx_slots(self.element, self.FX_CHAINS)
+
+    @property
     def fx(self):
         """Plugin names on this track, in chain order."""
-        names = []
-        for chain in self.element:
-            if getattr(chain, "tag", None) not in self.FX_CHAINS:
-                continue
-            for child in chain:
-                if getattr(child, "tag", None) in self.FX_TAGS and child.attrib:
-                    names.append(str(child.attrib[0]))
-        return names
+        return [slot.name for slot in self.fx_slots]
 
     def remove_fx(self, match):
         """Delete every plugin whose name contains `match`; returns what went."""
@@ -568,11 +613,19 @@ class Item:
                     self.element.remove(child)
 
     # FADEIN/FADEOUT <shape> <length> <auto_length> <auto_shape> <?> <curve> <?>
-    # Shape 5 is REAPER's equal-power (raised-cosine) curve, which is what a
-    # crossfade between two different takes wants: powers add, so a correctly
-    # placed one is dip-free by construction. Shape 0 (linear, equal-gain)
-    # belongs to material spliced to itself. See reaper-tools docs/crossfades.md.
-    EQUAL_POWER = 5
+    #
+    # Shape 1 is equal-power and shape 5 is NOT, which is the reverse of what
+    # REAPER's own fade menu wording suggests and of what reaper-tools believed
+    # until it was measured. Splice a file to itself so the two sides are
+    # identical and perfectly correlated, then crossfade: an amplitude-
+    # complementary curve (a+b=1) stays flat, a power-complementary one
+    # (a^2+b^2=1) bumps +3 dB. Shape 1 bumped +3.34 dB; shapes 0, 2 and 5 all
+    # stayed within 0.2 dB of flat.
+    #
+    # It matters: two different takes are uncorrelated, and an amplitude-
+    # complementary crossfade between uncorrelated sources DIPS ~3 dB, which is
+    # audible as a level notch at every seam.
+    EQUAL_POWER = 1
     EQUAL_GAIN = 0
 
     fade_in = property(
